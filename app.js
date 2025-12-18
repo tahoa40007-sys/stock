@@ -55,6 +55,61 @@ const fmt = (v)=>{
   return String(v);
 };
 
+// 將非標準 JSON token（NaN / Infinity）在「非字串區段」轉成 null，避免 JSON.parse 失敗
+function sanitizeNonStandardJSON(text){
+  const isBoundary = (ch)=>{
+    // JSON token 邊界：逗號/括號/冒號/空白等都算，字母數字底線不算
+    return !ch || !(/[0-9A-Za-z_]/.test(ch));
+  };
+
+  let out = "";
+  let inStr = false;
+  let esc = false;
+
+  for (let i = 0; i < text.length; i++){
+    const ch = text[i];
+
+    if (inStr){
+      out += ch;
+      if (esc) { esc = false; continue; }
+      if (ch === "\\\\") { esc = true; continue; }
+      if (ch === '"') { inStr = false; }
+      continue;
+    }
+
+    if (ch === '"'){
+      inStr = true;
+      out += ch;
+      continue;
+    }
+
+    // NaN
+    if (ch === "N" && text.startsWith("NaN", i) && isBoundary(text[i-1]) && isBoundary(text[i+3])){
+      out += "null";
+      i += 2; // 跳過 a n
+      continue;
+    }
+
+    // Infinity
+    if (ch === "I" && text.startsWith("Infinity", i) && isBoundary(text[i-1]) && isBoundary(text[i+8])){
+      out += "null";
+      i += 7; // 跳過 nfinity
+      continue;
+    }
+
+    // -Infinity
+    if (ch === "-" && text.startsWith("-Infinity", i) && isBoundary(text[i-1]) && isBoundary(text[i+9])){
+      out += "null";
+      i += 8;
+      continue;
+    }
+
+    out += ch;
+  }
+
+  return out;
+}
+
 function loadJSON(key, fallback){
   try { return JSON.parse(localStorage.getItem(key) || ""); } catch { return fallback; }
 }
@@ -205,7 +260,20 @@ async function fetchDriveGzipJson(apiKey, fileId){
   const ds = new DecompressionStream("gzip");
   const decompressedStream = new Response(new Blob([buf]).stream().pipeThrough(ds));
   const text = await decompressedStream.text();
-  return JSON.parse(text);
+  const cleanText = sanitizeNonStandardJSON(text);
+  try {
+    return JSON.parse(cleanText);
+  } catch (e) {
+    // 盡量把錯誤訊息縮短，同時保留線索
+    const msg = String(e && e.message ? e.message : e);
+    const m2 = msg.match(/position\s+(\d+)/i);
+    if (m2) {
+      const p = Math.max(0, Math.min(cleanText.length, Number(m2[1])));
+      const snippet = cleanText.slice(Math.max(0, p - 80), Math.min(cleanText.length, p + 80));
+      throw new Error(`JSON 解析失敗：${msg}｜附近片段：${snippet}`);
+    }
+    throw new Error(`JSON 解析失敗：${msg}`);
+  }
 }
 
 async function refresh(){
