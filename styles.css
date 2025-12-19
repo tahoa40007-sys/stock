@@ -85,3 +85,10 @@ tr:hover td{background:rgba(255,255,255,.03)}
   .kv .k{ font-size: 11px; color:#6b7280; }
   .kv .v{ font-size: 13px; font-weight: 700; }
 }
+/* --- Make card text darker for readability (mobile) --- */
+@media (max-width: 768px){
+  .bondCard { color: #111827; }          /* 主文字更深 */
+  .bondSub { color: #374151; }           /* 次標題加深 */
+  .kv .k { color: #374151; }             /* key（欄位名）加深 */
+  .badge { color: #111827; }             /* badge 文字加深 */
+}
