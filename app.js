@@ -4,6 +4,7 @@ const LS = {
   watch: "cb_watchlist",
   cols: "cb_cols_visible",
   pins: "cb_cols_pinned",
+  order: "cb_cols_order",          // ✅ 新增：欄位順序
   sortKey: "cb_sortKey",
   sortDir: "cb_sortDir",
 };
@@ -125,6 +126,32 @@ let pinnedCols = loadJSON(LS.pins, ["bond_code","bond_name"]);
 let sortKey = localStorage.getItem(LS.sortKey) || "premium_pct";
 let sortDir = localStorage.getItem(LS.sortDir) || "asc";
 
+let colOrder = loadJSON(LS.order, null);
+
+function ensureColOrder(){
+  const allKeys = COLS.map(c=>c.key);
+  if (!Array.isArray(colOrder) || colOrder.length === 0){
+    colOrder = [...new Set([...pinnedCols, ...visibleCols, ...allKeys])];
+  }
+  colOrder = colOrder.filter(k => allKeys.includes(k));
+  allKeys.forEach(k => { if (!colOrder.includes(k)) colOrder.push(k); });
+  saveJSON(LS.order, colOrder);
+}
+
+function moveCol(key, delta){
+  ensureColOrder();
+  const i = colOrder.indexOf(key);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= colOrder.length) return;
+  [colOrder[i], colOrder[j]] = [colOrder[j], colOrder[i]];
+  saveJSON(LS.order, colOrder);
+  renderChooser();
+  applyFilter();
+}
+
+ensureColOrder();
+
+
 function renderWatch(){
   const box = el("watchChips");
   box.innerHTML = "";
@@ -146,7 +173,8 @@ function renderChooser(){
   const allKeys = COLS.map(c=>c.key);
 
   const order = [...new Set([...pinnedCols, ...visibleCols, ...allKeys])].filter(k=>allKeys.includes(k));
-
+  
+  ensureColOrder();
   order.forEach(k=>{
     const c = COLS.find(x=>x.key===k);
     const div = document.createElement("div");
@@ -174,6 +202,26 @@ function renderChooser(){
     div.appendChild(cb);
     div.appendChild(star);
     div.appendChild(label);
+	const moves = document.createElement("div");
+	moves.className = "moveBtns";
+
+	const up = document.createElement("button");
+	up.type = "button";
+	up.className = "moveBtn";
+	up.textContent = "▲";
+	up.title = "上移";
+	up.onclick = ()=>moveCol(k, -1);
+
+	const dn = document.createElement("button");
+	dn.type = "button";
+	dn.className = "moveBtn";
+	dn.textContent = "▼";
+	dn.title = "下移";
+	dn.onclick = ()=>moveCol(k, 1);
+
+	moves.appendChild(up);
+	moves.appendChild(dn);
+	div.appendChild(moves);
     box.appendChild(div);
   });
 
@@ -206,12 +254,15 @@ function applyFilter(){
   dataView = dataAll.filter(r => wl.size===0 ? true : wl.has(String(r.bond_code)));
   dataView = sortData(dataView);
   renderTable();
+  renderCards();   // ✅ 新增
   el("status").textContent = `資料筆數：${dataAll.length}｜顯示：${dataView.length}｜Watchlist：${watch.length}`;
 }
 
 function renderTable(){
   const tbl = el("tbl");
-  const cols = [...new Set([...pinnedCols, ...visibleCols])].filter(k=>visibleCols.includes(k) || pinnedCols.includes(k));
+  ensureColOrder();
+
+  const cols = colOrder.filter(k => visibleCols.includes(k) || pinnedCols.includes(k));
   const colDefs = cols.map(k=>COLS.find(c=>c.key===k)).filter(Boolean);
 
   const thead = document.createElement("thead");
@@ -247,6 +298,76 @@ function renderTable(){
   tbl.appendChild(thead);
   tbl.appendChild(tbody);
 }
+
+function colLabel(key){
+  const c = COLS.find(x=>x.key===key);
+  if (!c) return key;
+  return c.label.split("(")[0]; // 取中文短標籤
+}
+function fmtCell(v){
+  const s = fmt(v);
+  return s === "" ? "—" : s;
+}
+
+function renderCards(){
+  const box = el("cardList");
+  if (!box) return;
+
+  ensureColOrder();
+
+  // 卡片一定顯示代號/名稱，其它依使用者勾選+釘選+順序
+  const keys = ["bond_code","bond_name", ...colOrder.filter(k =>
+    (visibleCols.includes(k) || pinnedCols.includes(k)) && !["bond_code","bond_name"].includes(k)
+  )];
+
+  box.innerHTML = "";
+  dataView.forEach(r=>{
+    const card = document.createElement("div");
+    card.className = "bondCard";
+
+    const head = document.createElement("div");
+    head.className = "bondCardHeader";
+
+    const left = document.createElement("div");
+    const code = String(r.bond_code ?? "");
+    const name = String(r.bond_name ?? "");
+    left.innerHTML = `<div class="bondTitle">${code}</div><div class="bondSub">${name}</div>`;
+
+    const right = document.createElement("div");
+    right.className = "badges";
+    const addBadge = (label, val)=>{
+      if (val === null || val === undefined || val === "") return;
+      const b = document.createElement("div");
+      b.className = "badge";
+      b.textContent = `${label}: ${val}`;
+      right.appendChild(b);
+    };
+
+    // 你最常看的兩個，放在卡片右上角（不喜歡也可刪掉）
+    addBadge("CB", fmtCell(r.cb_close));
+    addBadge("溢價%", r.premium_pct == null ? "" : `${fmt(r.premium_pct)}%`);
+
+    head.appendChild(left);
+    head.appendChild(right);
+
+    const grid = document.createElement("div");
+    grid.className = "kvGrid";
+
+    keys.forEach(k=>{
+      if (k === "bond_code" || k === "bond_name") return;
+      const kv = document.createElement("div");
+      kv.className = "kv";
+      const v = (k === "premium_pct" && r[k] != null) ? `${fmt(r[k])}%` : fmtCell(r[k]);
+      kv.innerHTML = `<div class="k">${colLabel(k)}</div><div class="v">${v}</div>`;
+      grid.appendChild(kv);
+    });
+
+    card.appendChild(head);
+    card.appendChild(grid);
+    box.appendChild(card);
+  });
+}
+
 
 async function fetchDriveGzipJson(apiKey, fileId, opts = {}) {
   const cacheBust = !!opts.cacheBust;

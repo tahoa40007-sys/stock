@@ -27,3 +27,61 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .dlgTitle{font-weight:800;margin-bottom:8px}
 .dlgBody label{display:block;margin-top:10px;font-size:12px;opacity:.85}
 .dlgActions{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
+/* 桌機預設：表格顯示、卡片隱藏 */
+.cardList { display: none; }
+
+/* 欄位選擇器的上/下移按鈕 */
+.moveBtns { margin-left: auto; display: flex; gap: 6px; }
+.moveBtn{
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 8px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.moveBtn:active{ transform: translateY(1px); }
+
+/* 手機：改成卡片模式，隱藏表格 */
+@media (max-width: 768px){
+  .tableWrap { display: none; }
+  .cardList{
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+  }
+  .bondCard{
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  .bondCardHeader{
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .bondTitle{ font-weight: 800; font-size: 16px; }
+  .bondSub{ color: #6b7280; font-size: 12px; margin-top: 2px; }
+
+  .badges{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .badge{
+    font-size:12px;
+    padding:4px 8px;
+    border-radius:999px;
+    background:#f3f4f6;
+    white-space:nowrap;
+  }
+
+  .kvGrid{
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+  }
+  .kv .k{ font-size: 11px; color:#6b7280; }
+  .kv .v{ font-size: 13px; font-weight: 700; }
+}
