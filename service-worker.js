@@ -1,4 +1,4 @@
-const VERSION = "v1";
+const VERSION = "v2";
 const APP_CACHE = `cb-app-${VERSION}`;
 const DATA_CACHE = `cb-data-${VERSION}`;
 
