@@ -248,9 +248,11 @@ function renderTable(){
   tbl.appendChild(tbody);
 }
 
-async function fetchDriveGzipJson(apiKey, fileId){
-  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url);
+async function fetchDriveGzipJson(apiKey, fileId, opts = {}){
+  let url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(apiKey)}`;
+  if (opts.cacheBust) url += `&t=${Date.now()}`;
+
+  const res = await fetch(url, opts.cacheBust ? { cache: "no-store" } : undefined);
   if (!res.ok) throw new Error(`下載失敗：${res.status} ${res.statusText}`);
   const buf = await res.arrayBuffer();
 
@@ -276,16 +278,27 @@ async function fetchDriveGzipJson(apiKey, fileId){
   }
 }
 
-async function refresh(){
+async function purgePwaDataCache(){
+  if (!("serviceWorker" in navigator)) return;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    reg.active?.postMessage({ type: "PURGE_DATA_CACHE" });
+  }catch(_){}
+}
+
+async function refresh(force=false){
   const apiKey = localStorage.getItem(LS.apiKey) || "";
   const fileId = localStorage.getItem(LS.fileId) || "";
   if (!apiKey || !fileId){
     el("status").textContent = "請先點『資料來源』設定 API key / file id";
     return;
   }
-  el("status").textContent = "下載中...";
+
+  el("status").textContent = force ? "強制更新中..." : "下載中...";
+
   try{
-    const payload = await fetchDriveGzipJson(apiKey, fileId);
+    if (force) await purgePwaDataCache();
+    const payload = await fetchDriveGzipJson(apiKey, fileId, { cacheBust: force });
     dataAll = payload;
     applyFilter();
   }catch(e){
@@ -305,7 +318,7 @@ function wire(){
     applyFilter();
   };
 
-  el("btnRefresh").onclick = refresh;
+el("btnRefresh").onclick = ()=> refresh(true);
 
   el("btnApplySort").onclick = ()=>{
     sortKey = el("selSortKey").value;
