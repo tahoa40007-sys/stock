@@ -248,11 +248,15 @@ function renderTable(){
   tbl.appendChild(tbody);
 }
 
-async function fetchDriveGzipJson(apiKey, fileId, opts = {}){
-  let url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(apiKey)}`;
-  if (opts.cacheBust) url += `&t=${Date.now()}`;
+async function fetchDriveGzipJson(apiKey, fileId, opts = {}) {
+  const cacheBust = !!opts.cacheBust;
+  const t = cacheBust ? `&t=${Date.now()}` : "";
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(apiKey)}${t}`;
 
-  const res = await fetch(url, opts.cacheBust ? { cache: "no-store" } : undefined);
+  const res = await fetch(url, {
+    cache: cacheBust ? "no-store" : "default",
+  });
+
   if (!res.ok) throw new Error(`下載失敗：${res.status} ${res.statusText}`);
   const buf = await res.arrayBuffer();
 
@@ -263,10 +267,10 @@ async function fetchDriveGzipJson(apiKey, fileId, opts = {}){
   const decompressedStream = new Response(new Blob([buf]).stream().pipeThrough(ds));
   const text = await decompressedStream.text();
   const cleanText = sanitizeNonStandardJSON(text);
+
   try {
     return JSON.parse(cleanText);
   } catch (e) {
-    // 盡量把錯誤訊息縮短，同時保留線索
     const msg = String(e && e.message ? e.message : e);
     const m2 = msg.match(/position\s+(\d+)/i);
     if (m2) {
@@ -286,22 +290,20 @@ async function purgePwaDataCache(){
   }catch(_){}
 }
 
-async function refresh(force=false){
+async function refresh(force = false) {
   const apiKey = localStorage.getItem(LS.apiKey) || "";
   const fileId = localStorage.getItem(LS.fileId) || "";
-  if (!apiKey || !fileId){
+  if (!apiKey || !fileId) {
     el("status").textContent = "請先點『資料來源』設定 API key / file id";
     return;
   }
-
   el("status").textContent = force ? "強制更新中..." : "下載中...";
 
-  try{
-    if (force) await purgePwaDataCache();
+  try {
     const payload = await fetchDriveGzipJson(apiKey, fileId, { cacheBust: force });
     dataAll = payload;
     applyFilter();
-  }catch(e){
+  } catch (e) {
     console.error(e);
     el("status").textContent = `錯誤：${e.message}`;
   }

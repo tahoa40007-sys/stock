@@ -1,18 +1,16 @@
-const VERSION = "v2";
+const VERSION = "v3";
 const APP_CACHE = `cb-app-${VERSION}`;
-const DATA_CACHE = `cb-data-${VERSION}`;
 
-// 你的資料檔（同網域路徑）
-const DATA_PATH = "/data/cb_snapshot_latest_all.json.gz";
-
-// 你網站的基本檔案（可依你實際調整）
+// GitHub Pages (/stock/) 用相對路徑最穩
 const APP_SHELL = [
-  "/",
-  "/index.html",
-  "/styles.css",
-  "/app.js",
-  "/manifest.webmanifest"
-
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./manifest.json",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -28,55 +26,30 @@ self.addEventListener("activate", (event) => {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter(k => ![APP_CACHE, DATA_CACHE].includes(k))
+        .filter(k => k.startsWith("cb-app-") && k !== APP_CACHE)
         .map(k => caches.delete(k))
     );
     self.clients.claim();
   })());
 });
 
-// 讓前端可以要求「清掉資料快取」
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "PURGE_DATA_CACHE") {
-    event.waitUntil((async () => {
-      const cache = await caches.open(DATA_CACHE);
-      await cache.delete(DATA_PATH); // 用固定 key，不受 query string 影響
-    })());
-  }
-});
-
-// 抓資料：有快取先回快取，同時背景更新（stale-while-revalidate）
-async function handleDataRequest(request) {
-  const cache = await caches.open(DATA_CACHE);
-  const cached = await cache.match(DATA_PATH);
-
-  const fetchPromise = fetch(request).then((res) => {
-    if (res.ok) cache.put(DATA_PATH, res.clone());
-    return res;
-  }).catch(() => null);
-
-  if (cached) {
-    // 背景更新，不阻塞回應
-    fetchPromise;
-    return cached;
-  }
-
-  const net = await fetchPromise;
-  return net || new Response("{}", { headers: { "Content-Type": "application/json" } });
-}
-
+// 只處理「同網域」請求；Google Drive 的下載是 cross-origin，不要管它
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
+  const req = event.request;
+  const url = new URL(req.url);
 
-  // 資料檔
-  if (url.pathname === DATA_PATH) {
-    event.respondWith(handleDataRequest(event.request));
-    return;
-  }
+  if (req.method !== "GET") return;
+  if (url.origin !== self.location.origin) return;
 
-  // App 殼：快取優先
   event.respondWith((async () => {
-    const cached = await caches.match(event.request);
-    return cached || fetch(event.request);
+    const cached = await caches.match(req);
+    if (cached) return cached;
+
+    const res = await fetch(req);
+    if (res.ok) {
+      const cache = await caches.open(APP_CACHE);
+      cache.put(req, res.clone());
+    }
+    return res;
   })());
 });
