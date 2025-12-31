@@ -1,3 +1,4 @@
+// ===== LocalStorage keys =====
 const LS = {
   apiKey: "cb_apiKey",
   fileId: "cb_fileId",
@@ -5,64 +6,24 @@ const LS = {
   watch: "cb_watchlist",
   cols: "cb_cols_visible",
   pins: "cb_cols_pinned",
-  order: "cb_cols_order",          // ✅ 新增：欄位順序
+  order: "cb_cols_order",
   sortKey: "cb_sortKey",
   sortDir: "cb_sortDir",
 };
 
-const COLS = [
-  { key:"bond_code", label:"債券代號(bond_code)" },
-  { key:"bond_name", label:"債券名稱(bond_name)" },
-  { key:"issuer_code", label:"發行機構代碼(issuer_code)" },
-  { key:"issuer_name", label:"發行機構名稱(issuer_name)" },
-  { key:"bond_trade_date", label:"CB交易日(bond_trade_date)" },
-  { key:"cb_close", label:"CB收市價(cb_close)" },
-  { key:"cb_change", label:"CB漲跌(cb_change)" },
-  { key:"premium_pct", label:"轉換溢價率%(premium_pct)" },
-  { key:"conv_value_100", label:"轉換價值(每百元)(conv_value_100)" },
-  { key:"conv_price", label:"最新轉換價(conv_price)" },
-  { key:"issuer_stock_close", label:"標的股收盤價(issuer_stock_close)" },
-  { key:"issuer_stock_market", label:"標的市場(issuer_stock_market)" },
-
-  { key:"cb_open", label:"CB開市價(cb_open)" },
-  { key:"cb_high", label:"CB最高價(cb_high)" },
-  { key:"cb_low", label:"CB最低價(cb_low)" },
-  { key:"cb_units", label:"CB成交單位(cb_units)" },
-  { key:"cb_amount", label:"CB成交金額(cb_amount)" },
-  { key:"cb_trades", label:"CB成交筆數(cb_trades)" },
-  { key:"cb_trade_mode", label:"CB交易模式(cb_trade_mode)" },
-
-  { key:"listed_date", label:"掛牌日(listed_date)" },
-  { key:"maturity", label:"到期日(maturity)" },
-  { key:"next_put_date", label:"下一次賣回日(next_put_date)" },
-  { key:"next_put_price_pct", label:"下一次賣回價%(next_put_price_pct)" },
-
-  { key:"tdcc_yyyymm", label:"TDCC資料年月(tdcc_yyyymm)" },
-  { key:"issued_amt", label:"發行張數(issued_amt)" },
-  { key:"remaining_bonds", label:"剩餘張數(remaining_bonds)" },
-  { key:"converted_bonds", label:"已轉換張數(converted_bonds)" },
-  { key:"converted_ratio_pct", label:"已轉換比例%(converted_ratio_pct)" },
-  { key:"converted_this_week", label:"本週轉換張數(converted_this_week)" },
-
-  { key:"snapshot_date", label:"快照日期(snapshot_date)" },
-];
-
 const el = (id)=>document.getElementById(id);
-const fmt = (v)=>{
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number") {
-    if (Number.isInteger(v)) return v.toLocaleString();
-    return (Math.round(v*1000)/1000).toLocaleString();
-  }
-  return String(v);
-};
+
+// -------- JSON helpers --------
+function loadJSON(key, fallback){
+  try { return JSON.parse(localStorage.getItem(key) || ""); } catch { return fallback; }
+}
+function saveJSON(key, value){
+  localStorage.setItem(key, JSON.stringify(value));
+}
 
 // 將非標準 JSON token（NaN / Infinity）在「非字串區段」轉成 null，避免 JSON.parse 失敗
 function sanitizeNonStandardJSON(text){
-  const isBoundary = (ch)=>{
-    // JSON token 邊界：逗號/括號/冒號/空白等都算，字母數字底線不算
-    return !ch || !(/[0-9A-Za-z_]/.test(ch));
-  };
+  const isBoundary = (ch)=> !ch || !(/[0-9A-Za-z_]/.test(ch));
 
   let out = "";
   let inStr = false;
@@ -74,7 +35,7 @@ function sanitizeNonStandardJSON(text){
     if (inStr){
       out += ch;
       if (esc) { esc = false; continue; }
-      if (ch === "\\\\") { esc = true; continue; }
+      if (ch === "\\") { esc = true; continue; }
       if (ch === '"') { inStr = false; }
       continue;
     }
@@ -85,62 +46,174 @@ function sanitizeNonStandardJSON(text){
       continue;
     }
 
-    // NaN
     if (ch === "N" && text.startsWith("NaN", i) && isBoundary(text[i-1]) && isBoundary(text[i+3])){
-      out += "null";
-      i += 2; // 跳過 a n
-      continue;
+      out += "null"; i += 2; continue;
     }
-
-    // Infinity
     if (ch === "I" && text.startsWith("Infinity", i) && isBoundary(text[i-1]) && isBoundary(text[i+8])){
-      out += "null";
-      i += 7; // 跳過 nfinity
-      continue;
+      out += "null"; i += 7; continue;
     }
-
-    // -Infinity
     if (ch === "-" && text.startsWith("-Infinity", i) && isBoundary(text[i-1]) && isBoundary(text[i+9])){
-      out += "null";
-      i += 8;
-      continue;
+      out += "null"; i += 8; continue;
     }
 
     out += ch;
   }
-
   return out;
 }
 
-function loadJSON(key, fallback){
-  try { return JSON.parse(localStorage.getItem(key) || ""); } catch { return fallback; }
+// -------- Format helpers --------
+function fmt(v){
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number"){
+    if (!Number.isFinite(v)) return "";
+    if (Number.isInteger(v)) return v.toLocaleString();
+    return (Math.round(v*1000)/1000).toLocaleString();
+  }
+  return String(v);
 }
-function saveJSON(key, value){
-  localStorage.setItem(key, JSON.stringify(value));
+function fmtCell(v){
+  const s = fmt(v);
+  return s === "" ? "—" : s;
+}
+function fmtNum(x, digits = 2){
+  if (x === null || x === undefined) return "--";
+  if (typeof x === "number" && Number.isFinite(x)) return x.toFixed(digits);
+  const n = Number(x);
+  return Number.isFinite(n) ? n.toFixed(digits) : String(x);
 }
 
+// -------- Data state --------
 let dataAll = [];
 let dataView = [];
-let watch = loadJSON(LS.watch, []);
-let visibleCols = loadJSON(LS.cols, COLS.slice(0,10).map(c=>c.key));
-let pinnedCols = loadJSON(LS.pins, ["bond_code","bond_name"]);
-let sortKey = localStorage.getItem(LS.sortKey) || "premium_pct";
-let sortDir = localStorage.getItem(LS.sortDir) || "asc";
 
+let watch = loadJSON(LS.watch, []);
+let visibleCols = loadJSON(LS.cols, []);
+let pinnedCols = loadJSON(LS.pins, ["bond_code"]);
 let colOrder = loadJSON(LS.order, null);
 
-function ensureColOrder(){
+let sortKey = localStorage.getItem(LS.sortKey) || "轉換溢價率";
+let sortDir = localStorage.getItem(LS.sortDir) || "asc";
+let qText = "";
+
+// COLS 會依資料自動建（同時支援：舊 raw snapshot / 新 card payload）
+let COLS = [];
+
+const LABEL_MAP = {
+  // 新 card payload（thefew 欄位）
+  "bond_code": "可轉債代號",
+  "可轉債名稱": "可轉債名稱",
+  "轉換標的名稱": "轉換標的名稱",
+  "上市櫃別": "上市櫃別",
+  "最新CB收盤價": "最新 CB 收盤價",
+  "轉換價值": "轉換價值(每百元)",
+  "CBAS 權利金（百元報價）": "CBAS 權利金",
+  "CBAS 折現率": "CBAS 折現率",
+  "轉換溢價率": "轉換溢價率(%)",
+  "最新股票收盤價": "最新股票收盤價",
+  "目前轉換價": "目前轉換價",
+  "發行時轉換價": "發行時轉換價",
+  "發行價格": "發行價格",
+  "發行總額(百萬)": "發行總額(百萬)",
+  "最新餘額(百萬)": "最新餘額(百萬)",
+  "轉換比例": "轉換比例(%)",
+  "發行日": "發行日",
+  "到期日": "到期日",
+  "到期賣回價格": "到期賣回價格",
+  "下次提前賣回日": "下次提前賣回日",
+  "下次提前賣回價格": "下次提前賣回價格",
+
+  // 舊 raw snapshot（兼容）
+  "bond_name": "債券名稱",
+  "issuer_name": "發行機構",
+  "issuer_stock_close": "標的股收盤價",
+  "issuer_stock_market": "標的市場",
+  "cb_close": "CB 收盤價",
+  "premium_pct": "轉換溢價率(%)",
+  "conv_value_100": "轉換價值(每百元)",
+  "conv_price": "最新轉換價",
+  "listed_date": "掛牌日",
+  "maturity": "到期日",
+};
+
+function labelOf(key){
+  return LABEL_MAP[key] || key;
+}
+
+function buildColsFromData(rows){
+  const r0 = rows && rows.length ? rows[0] : null;
+  if (!r0) return [];
+
+  const keys = Object.keys(r0);
+  // 想要固定顯示/排序的 key（若存在）
+  const preferred = [
+    "bond_code",
+    "可轉債名稱","bond_name",
+    "轉換標的名稱","issuer_name",
+    "上市櫃別","issuer_stock_market",
+    "最新CB收盤價","cb_close",
+    "轉換價值","conv_value_100",
+    "轉換溢價率","premium_pct",
+    "最新股票收盤價","issuer_stock_close",
+    "目前轉換價","conv_price",
+    "發行時轉換價","issue_conv_price",
+    "發行總額(百萬)","issued_amt",
+    "最新餘額(百萬)","remaining_bonds",
+    "轉換比例","converted_ratio_pct",
+    "發行日","listed_date",
+    "到期日","maturity",
+    "下次提前賣回日","next_put_date",
+    "下次提前賣回價格","next_put_price_pct",
+  ];
+
+  const seen = new Set();
+  const ordered = [];
+
+  preferred.forEach(k=>{
+    if (keys.includes(k) && !seen.has(k)){
+      ordered.push(k); seen.add(k);
+    }
+  });
+  keys.forEach(k=>{
+    if (!seen.has(k)){
+      ordered.push(k); seen.add(k);
+    }
+  });
+
+  return ordered.map(k=>({ key: k, label: labelOf(k) }));
+}
+
+function ensureColState(){
   const allKeys = COLS.map(c=>c.key);
   if (!Array.isArray(colOrder) || colOrder.length === 0){
-    colOrder = [...new Set([...pinnedCols, ...visibleCols, ...allKeys])];
+    colOrder = [...allKeys];
   }
   colOrder = colOrder.filter(k => allKeys.includes(k));
   allKeys.forEach(k => { if (!colOrder.includes(k)) colOrder.push(k); });
+
+  if (!Array.isArray(visibleCols) || visibleCols.length === 0){
+    // 預設顯示前 12 欄
+    visibleCols = colOrder.slice(0, Math.min(12, colOrder.length));
+  }
+  visibleCols = visibleCols.filter(k=>allKeys.includes(k));
+
+  if (!Array.isArray(pinnedCols) || pinnedCols.length === 0){
+    pinnedCols = ["bond_code"].filter(k=>allKeys.includes(k));
+  }
+  pinnedCols = pinnedCols.filter(k=>allKeys.includes(k));
+
+  // sortKey 若不存在，退回第一欄
+  if (!allKeys.includes(sortKey)){
+    sortKey = allKeys[0] || sortKey;
+    localStorage.setItem(LS.sortKey, sortKey);
+  }
+
   saveJSON(LS.order, colOrder);
+  saveJSON(LS.cols, visibleCols);
+  saveJSON(LS.pins, pinnedCols);
 }
 
 function moveCol(key, delta){
-  ensureColOrder();
+  ensureColState();
   const i = colOrder.indexOf(key);
   const j = i + delta;
   if (i < 0 || j < 0 || j >= colOrder.length) return;
@@ -150,8 +223,22 @@ function moveCol(key, delta){
   applyFilter();
 }
 
-ensureColOrder();
+function renderSortUI(){
+  const sel = el("selSort");
+  if (!sel) return;
+  sel.innerHTML = "";
 
+  COLS.forEach(c=>{
+    const opt = document.createElement("option");
+    opt.value = c.key;
+    opt.textContent = c.label;
+    sel.appendChild(opt);
+  });
+
+  sel.value = sortKey;
+  const btnDir = el("btnSortDir");
+  if (btnDir) btnDir.textContent = (sortDir === "asc") ? "↑" : "↓";
+}
 
 function renderWatch(){
   const box = el("watchChips");
@@ -170,16 +257,17 @@ function renderWatch(){
 
 function renderChooser(){
   const box = el("colChooser");
+  if (!box) return;
   box.innerHTML = "";
-  const allKeys = COLS.map(c=>c.key);
 
-  const order = [...new Set([...pinnedCols, ...visibleCols, ...allKeys])].filter(k=>allKeys.includes(k));
-  
-  ensureColOrder();
-  order.forEach(k=>{
+  ensureColState();
+  colOrder.forEach(k=>{
     const c = COLS.find(x=>x.key===k);
+    if (!c) return;
+
     const div = document.createElement("div");
     div.className = "colItem";
+
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = visibleCols.includes(k);
@@ -188,6 +276,7 @@ function renderChooser(){
       saveJSON(LS.cols, visibleCols);
       applyFilter();
     };
+
     const star = document.createElement("span");
     star.className = "star";
     const pinned = pinnedCols.includes(k);
@@ -198,44 +287,36 @@ function renderChooser(){
       renderChooser();
       applyFilter();
     };
+
     const label = document.createElement("div");
     label.textContent = c.label;
+
+    const moves = document.createElement("div");
+    moves.className = "moveBtns";
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "moveBtn";
+    up.textContent = "▲";
+    up.title = "上移";
+    up.onclick = ()=>moveCol(k, -1);
+
+    const dn = document.createElement("button");
+    dn.type = "button";
+    dn.className = "moveBtn";
+    dn.textContent = "▼";
+    dn.title = "下移";
+    dn.onclick = ()=>moveCol(k, 1);
+
+    moves.appendChild(up);
+    moves.appendChild(dn);
+
     div.appendChild(cb);
     div.appendChild(star);
     div.appendChild(label);
-	const moves = document.createElement("div");
-	moves.className = "moveBtns";
-
-	const up = document.createElement("button");
-	up.type = "button";
-	up.className = "moveBtn";
-	up.textContent = "▲";
-	up.title = "上移";
-	up.onclick = ()=>moveCol(k, -1);
-
-	const dn = document.createElement("button");
-	dn.type = "button";
-	dn.className = "moveBtn";
-	dn.textContent = "▼";
-	dn.title = "下移";
-	dn.onclick = ()=>moveCol(k, 1);
-
-	moves.appendChild(up);
-	moves.appendChild(dn);
-	div.appendChild(moves);
+    div.appendChild(moves);
     box.appendChild(div);
   });
-
-  const sel = el("selSortKey");
-  sel.innerHTML = "";
-  COLS.forEach(c=>{
-    const opt = document.createElement("option");
-    opt.value = c.key;
-    opt.textContent = c.label;
-    sel.appendChild(opt);
-  });
-  sel.value = sortKey;
-  el("selSortDir").value = sortDir;
 }
 
 function sortData(arr){
@@ -243,26 +324,64 @@ function sortData(arr){
   const k = sortKey;
   return arr.slice().sort((a,b)=>{
     const av = a[k]; const bv = b[k];
-    if (av === null || av === undefined) return 1;
-    if (bv === null || bv === undefined) return -1;
-    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+    if (av === null || av === undefined || av === "") return 1;
+    if (bv === null || bv === undefined || bv === "") return -1;
+    const an = Number(av), bn = Number(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return (an - bn) * dir;
     return String(av).localeCompare(String(bv)) * dir;
   });
 }
 
+function matchesWatch(row, code){
+  // watchlist 混用：優先比 bond_code；若資料有 issuer_code/issuer_stock_code 也可比
+  const bc = String(row["bond_code"] ?? row.bond_code ?? "").trim();
+  if (bc && bc === code) return true;
+
+  const issuerCode = String(row["issuer_code"] ?? row["issuer_stock_code"] ?? row.issuer_code ?? row.issuer_stock_code ?? "").trim();
+  if (issuerCode && issuerCode === code) return true;
+
+  // 最後：若使用者輸入 4 碼但資料沒有 issuer_code，仍可用名稱搜尋補救
+  const name = String(row["可轉債名稱"] ?? row.bond_name ?? "").trim();
+  const issuer = String(row["轉換標的名稱"] ?? row.issuer_name ?? "").trim();
+  if (code.length === 4 && (name.includes(code) || issuer.includes(code))) return true;
+
+  return false;
+}
+
 function applyFilter(){
-  const wl = new Set(watch);
-  dataView = dataAll.filter(r => wl.size===0 ? true : wl.has(String(r.bond_code)));
+  const wl = new Set(watch.map(x=>String(x)));
+  const q = (qText || "").trim().toLowerCase();
+
+  dataView = dataAll.filter(r => {
+    // watchlist
+    if (wl.size > 0){
+      let ok = false;
+      for (const code of wl){
+        if (matchesWatch(r, code)) { ok = true; break; }
+      }
+      if (!ok) return false;
+    }
+
+    // search
+    if (q){
+      const hay = Object.values(r).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
   dataView = sortData(dataView);
   renderTable();
-  renderCards();   // ✅ 新增
+  renderCards();
+
   el("status").textContent = `資料筆數：${dataAll.length}｜顯示：${dataView.length}｜Watchlist：${watch.length}`;
 }
 
 function renderTable(){
   const tbl = el("tbl");
-  ensureColOrder();
+  if (!tbl) return;
 
+  ensureColState();
   const cols = colOrder.filter(k => visibleCols.includes(k) || pinnedCols.includes(k));
   const colDefs = cols.map(k=>COLS.find(c=>c.key===k)).filter(Boolean);
 
@@ -277,8 +396,8 @@ function renderTable(){
       else { sortKey = c.key; sortDir = "asc"; }
       localStorage.setItem(LS.sortKey, sortKey);
       localStorage.setItem(LS.sortDir, sortDir);
+      renderSortUI();
       applyFilter();
-      renderChooser();
     };
     trh.appendChild(th);
   });
@@ -300,28 +419,23 @@ function renderTable(){
   tbl.appendChild(tbody);
 }
 
-function colLabel(key){
-  const c = COLS.find(x=>x.key===key);
-  if (!c) return key;
-  return c.label.split("(")[0]; // 取中文短標籤
-}
-function fmtCell(v){
-  const s = fmt(v);
-  return s === "" ? "—" : s;
+// -------- Cards --------
+function getKey(row, ...keys){
+  for (const k of keys){
+    if (k in row) return k;
+  }
+  return null;
 }
 
 function renderCards(){
   const box = el("cardList");
   if (!box) return;
 
-  ensureColOrder();
-
-  // 卡片一定顯示代號/名稱，其它依使用者勾選+釘選+順序
-  const keys = ["bond_code","bond_name", ...colOrder.filter(k =>
-    (visibleCols.includes(k) || pinnedCols.includes(k)) && !["bond_code","bond_name"].includes(k)
-  )];
+  ensureColState();
+  const keys = colOrder.filter(k => (visibleCols.includes(k) || pinnedCols.includes(k)));
 
   box.innerHTML = "";
+
   dataView.forEach(r=>{
     const card = document.createElement("div");
     card.className = "bondCard";
@@ -330,23 +444,46 @@ function renderCards(){
     head.className = "bondCardHeader";
 
     const left = document.createElement("div");
-    const code = String(r.bond_code ?? "");
-    const name = String(r.bond_name ?? "");
-    left.innerHTML = `<div class="bondTitle">${code}</div><div class="bondSub">${name}</div>`;
+
+    const kCode = getKey(r, "bond_code");
+    const kName = getKey(r, "可轉債名稱","bond_name");
+    const kSub  = getKey(r, "轉換標的名稱","issuer_name");
+
+    const code = kCode ? String(r[kCode] ?? "") : "";
+    const name = kName ? String(r[kName] ?? "") : "";
+    const sub  = kSub  ? String(r[kSub] ?? "") : "";
+
+    left.innerHTML = `<div class="bondTitle">${code}</div><div class="bondSub">${name}${sub ? "｜"+sub : ""}</div>`;
 
     const right = document.createElement("div");
     right.className = "badges";
+
     const addBadge = (label, val)=>{
-      if (val === null || val === undefined || val === "") return;
+      if (val === null || val === undefined) return;
+      const s = String(val).trim();
+      if (!s) return;
       const b = document.createElement("div");
       b.className = "badge";
-      b.textContent = `${label}: ${val}`;
+      b.textContent = `${label}: ${s}`;
       right.appendChild(b);
     };
 
-    // 你最常看的兩個，放在卡片右上角（不喜歡也可刪掉）
-    addBadge("CB", fmtCell(r.cb_close));
-    addBadge("溢價%", r.premium_pct == null ? "" : `${fmt(r.premium_pct)}%`);
+    const kCb = getKey(r, "最新CB收盤價","cb_close");
+    const kPrem = getKey(r, "轉換溢價率","premium_pct");
+
+    if (kCb) addBadge("CB", fmtCell(r[kCb]));
+    if (kPrem){
+      const v = r[kPrem];
+      if (typeof v === "number") addBadge("溢價%", `${fmtNum(v,2)}%`);
+      else addBadge("溢價%", fmtCell(v));
+    }
+
+    // 趨勢按鈕（📈3M）
+    const btnTrend = document.createElement("button");
+    btnTrend.className = "btnTrend";
+    btnTrend.textContent = "📈3M";
+    btnTrend.onclick = ()=>openTrendForRow(r);
+    right.appendChild(btnTrend);
 
     head.appendChild(left);
     head.appendChild(right);
@@ -355,11 +492,21 @@ function renderCards(){
     grid.className = "kvGrid";
 
     keys.forEach(k=>{
-      if (k === "bond_code" || k === "bond_name") return;
+      if (["bond_code","可轉債名稱","bond_name","轉換標的名稱","issuer_name"].includes(k)) return;
+      const v = r[k];
+      if (v === null || v === undefined || v === "") return;
+
       const kv = document.createElement("div");
       kv.className = "kv";
-      const v = (k === "premium_pct" && r[k] != null) ? `${fmt(r[k])}%` : fmtCell(r[k]);
-      kv.innerHTML = `<div class="k">${colLabel(k)}</div><div class="v">${v}</div>`;
+
+      let vv = fmtCell(v);
+      // 數字欄位美化
+      if (typeof v === "number" && Number.isFinite(v)){
+        if (k.includes("溢價") || k.includes("比例") || k.endsWith("%")) vv = `${fmtNum(v,2)}%`;
+        else vv = fmtNum(v,2);
+      }
+
+      kv.innerHTML = `<div class="k">${labelOf(k)}</div><div class="v">${vv}</div>`;
       grid.appendChild(kv);
     });
 
@@ -369,49 +516,28 @@ function renderCards(){
   });
 }
 
-
+// -------- Drive fetch (gzip json) --------
 async function fetchDriveGzipJson(apiKey, fileId, opts = {}) {
   const cacheBust = !!opts.cacheBust;
   const t = cacheBust ? `&t=${Date.now()}` : "";
   const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(apiKey)}${t}`;
 
-  const res = await fetch(url, {
-    cache: cacheBust ? "no-store" : "default",
-  });
-
+  const res = await fetch(url, { cache: cacheBust ? "no-store" : "default" });
   if (!res.ok) throw new Error(`下載失敗：${res.status} ${res.statusText}`);
-  const buf = await res.arrayBuffer();
 
+  const buf = await res.arrayBuffer();
   if (!("DecompressionStream" in window)) {
-    throw new Error("你的瀏覽器不支援 gzip 解壓（DecompressionStream）。建議用 Chrome/Edge 或更新 iOS/Android 版本。");
+    throw new Error("瀏覽器不支援 gzip 解壓（DecompressionStream）。請用 Chrome/Edge 或更新系統。");
   }
+
   const ds = new DecompressionStream("gzip");
   const decompressedStream = new Response(new Blob([buf]).stream().pipeThrough(ds));
   const text = await decompressedStream.text();
   const cleanText = sanitizeNonStandardJSON(text);
-
-  try {
-    return JSON.parse(cleanText);
-  } catch (e) {
-    const msg = String(e && e.message ? e.message : e);
-    const m2 = msg.match(/position\s+(\d+)/i);
-    if (m2) {
-      const p = Math.max(0, Math.min(cleanText.length, Number(m2[1])));
-      const snippet = cleanText.slice(Math.max(0, p - 80), Math.min(cleanText.length, p + 80));
-      throw new Error(`JSON 解析失敗：${msg}｜附近片段：${snippet}`);
-    }
-    throw new Error(`JSON 解析失敗：${msg}`);
-  }
+  return JSON.parse(cleanText);
 }
 
-async function purgePwaDataCache(){
-  if (!("serviceWorker" in navigator)) return;
-  try{
-    const reg = await navigator.serviceWorker.ready;
-    reg.active?.postMessage({ type: "PURGE_DATA_CACHE" });
-  }catch(_){}
-}
-
+// -------- Refresh (card payload) --------
 async function refresh(force = false) {
   const apiKey = localStorage.getItem(LS.apiKey) || "";
   const fileId = localStorage.getItem(LS.fileId) || "";
@@ -419,18 +545,25 @@ async function refresh(force = false) {
     el("status").textContent = "請先點『資料來源』設定 API key / file id";
     return;
   }
+
   el("status").textContent = force ? "強制更新中..." : "下載中...";
 
   try {
     const payload = await fetchDriveGzipJson(apiKey, fileId, { cacheBust: force });
-    dataAll = payload;
+    dataAll = Array.isArray(payload) ? payload : (payload?.rows || payload?.data || []);
+
+    // 動態建立欄位
+    COLS = buildColsFromData(dataAll);
+    ensureColState();
+    renderSortUI();
+    renderChooser();
+
     applyFilter();
   } catch (e) {
     console.error(e);
-    el("status").textContent = `錯誤：${e.message}`;
+    el("status").textContent = `錯誤：${e.message || e}`;
   }
 }
-
 
 // ===== Trend (CB 近3M 成交價/量) =====
 let trendCache = null;
@@ -445,13 +578,6 @@ async function getTrendPayload(force = false) {
   }
   trendCache = await fetchDriveGzipJson(apiKey, trendFileId, { cacheBust: force });
   return trendCache;
-}
-
-function fmtNum(x, digits = 2) {
-  if (x === null || x === undefined) return "--";
-  if (typeof x === "number" && Number.isFinite(x)) return x.toFixed(digits);
-  const n = Number(x);
-  return Number.isFinite(n) ? n.toFixed(digits) : String(x);
 }
 
 function drawTrend(canvas, pts) {
@@ -508,11 +634,13 @@ function drawTrend(canvas, pts) {
     return yVol1 - r * (hVol - 10);
   };
 
+  // axes
   ctx.strokeStyle = "#e5e7eb";
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(x0, yPrice1); ctx.lineTo(x0 + w, yPrice1); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(x0, yVol1); ctx.lineTo(x0 + w, yVol1); ctx.stroke();
 
+  // price line
   ctx.strokeStyle = "#111827";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -524,6 +652,7 @@ function drawTrend(canvas, pts) {
   });
   ctx.stroke();
 
+  // points
   ctx.fillStyle = "#111827";
   pts.forEach((p) => {
     const x = xOf(p.d);
@@ -531,6 +660,7 @@ function drawTrend(canvas, pts) {
     ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
   });
 
+  // volume bars
   const barW = 4;
   ctx.fillStyle = "rgba(17,24,39,.30)";
   pts.forEach((p) => {
@@ -541,6 +671,7 @@ function drawTrend(canvas, pts) {
     ctx.fillRect(x - barW/2, y, barW, yVol1 - y);
   });
 
+  // labels
   ctx.fillStyle = "#374151";
   ctx.font = "12px system-ui";
   ctx.fillText(`成交價（Min ${fmtNum(cMin)} / Max ${fmtNum(cMax)}）`, x0, yPrice0 - 8);
@@ -548,15 +679,18 @@ function drawTrend(canvas, pts) {
 }
 
 async function openTrendForRow(r) {
-  const code = String(r["bond_code"] ?? "").trim();
-  const shortName = (r["可轉債短名"] || r["可轉債名稱"] || "").toString().trim();
+  const code = String(r["bond_code"] ?? r.bond_code ?? "").trim();
+  const shortName = String(r["可轉債名稱"] ?? r.bond_name ?? code).trim();
   const title = `${shortName || code}（${code}）`;
 
-  const dlg = document.getElementById("dlgTrend");
-  if (!dlg) throw new Error("缺少 dlgTrend（請更新 index.html）");
+  const dlg = el("dlgTrend");
+  if (!dlg) {
+    alert("缺少趨勢視窗（dlgTrend）。請確認 index.html 已更新。");
+    return;
+  }
 
-  document.getElementById("trendTitle").textContent = title;
-  const meta = document.getElementById("trendMeta");
+  el("trendTitle").textContent = title;
+  const meta = el("trendMeta");
   meta.textContent = "載入趨勢中...";
   dlg.showModal();
 
@@ -571,20 +705,20 @@ async function openTrendForRow(r) {
       `資料日期：<b>${tp.asof || "--"}</b>　` +
       (last ? `最後成交：<b>${last.d}</b>　收盤：<b>${fmtNum(last.c)}</b>　量：<b>${last.u ?? 0}</b>` : "（近 3M 無成交）");
 
-    const canvas = document.getElementById("trendCanvas");
+    const canvas = el("trendCanvas");
     requestAnimationFrame(() => drawTrend(canvas, pts));
   } catch (e) {
     console.error(e);
     meta.textContent = `載入失敗：${e.message || e}`;
-    const canvas = document.getElementById("trendCanvas");
-    drawTrend(canvas, []);
+    drawTrend(el("trendCanvas"), []);
   }
 }
 
-
+// -------- Wire UI --------
 function wire(){
-  el("btnAdd").onclick = ()=>{
-    const v = el("inpAdd").value.trim();
+  // Watchlist add
+  const addOne = ()=>{
+    const v = (el("inpAdd").value || "").trim();
     if (!v) return;
     if (!watch.includes(v)) watch.push(v);
     saveJSON(LS.watch, watch);
@@ -592,17 +726,41 @@ function wire(){
     renderWatch();
     applyFilter();
   };
+  el("btnAdd").onclick = addOne;
+  el("inpAdd").addEventListener("keydown", (e)=>{ if (e.key === "Enter") { e.preventDefault(); addOne(); }});
 
-el("btnRefresh").onclick = ()=> refresh(true);
-
-  el("btnApplySort").onclick = ()=>{
-    sortKey = el("selSortKey").value;
-    sortDir = el("selSortDir").value;
-    localStorage.setItem(LS.sortKey, sortKey);
-    localStorage.setItem(LS.sortDir, sortDir);
+  // Clear watchlist
+  el("btnClear").onclick = ()=>{
+    watch = [];
+    saveJSON(LS.watch, watch);
+    renderWatch();
     applyFilter();
   };
 
+  // Search
+  el("inpQ").addEventListener("input", ()=>{
+    qText = el("inpQ").value || "";
+    applyFilter();
+  });
+
+  // Sort
+  el("selSort").addEventListener("change", ()=>{
+    sortKey = el("selSort").value;
+    localStorage.setItem(LS.sortKey, sortKey);
+    applyFilter();
+  });
+  el("btnSortDir").onclick = ()=>{
+    sortDir = (sortDir === "asc") ? "desc" : "asc";
+    localStorage.setItem(LS.sortDir, sortDir);
+    renderSortUI();
+    applyFilter();
+  };
+
+  // Refresh / Force
+  el("btnRefresh").onclick = ()=> refresh(false);
+  el("btnForce").onclick = ()=> { trendCache = null; refresh(true); };
+
+  // Settings dialog
   const dlg = el("dlgSettings");
   el("btnSettings").onclick = ()=>{
     el("inpApiKey").value = localStorage.getItem(LS.apiKey) || "";
@@ -611,14 +769,20 @@ el("btnRefresh").onclick = ()=> refresh(true);
     dlg.showModal();
   };
   el("btnSave").onclick = ()=>{
-    localStorage.setItem(LS.apiKey, el("inpApiKey").value.trim());
-    localStorage.setItem(LS.fileId, el("inpFileId").value.trim());
-    localStorage.setItem(LS.trendFileId, el("inpTrendFileId").value.trim());
+    localStorage.setItem(LS.apiKey, (el("inpApiKey").value || "").trim());
+    localStorage.setItem(LS.fileId, (el("inpFileId").value || "").trim());
+    localStorage.setItem(LS.trendFileId, (el("inpTrendFileId").value || "").trim());
     trendCache = null;
   };
 
+  // init UI
   renderWatch();
+  // 若尚未載入資料也先讓 UI 不會崩
+  renderSortUI();
   renderChooser();
-  applyFilter();
+
+  // 可選：自動載入（你也可以關掉）
+  refresh(false);
 }
+
 wire();

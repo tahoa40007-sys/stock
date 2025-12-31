@@ -1,4 +1,4 @@
-const VERSION = "v8";
+const VERSION = "v9";
 const APP_CACHE = `cb-app-${VERSION}`;
 
 // GitHub Pages (/stock/) 用相對路徑最穩
