@@ -92,3 +92,28 @@ tr:hover td{background:rgba(255,255,255,.03)}
   .kv .k { color: #374151; }             /* key（欄位名）加深 */
   .badge { color: #111827; }             /* badge 文字加深 */
 }
+
+/* ===== Trend dialog & button ===== */
+.btnTrend{
+  border: 1px solid rgba(17,24,39,.25);
+  background: rgba(255,255,255,.92);
+  color:#111827;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btnTrend:hover{ background:#ffffff; }
+.dlgTrend{ max-width: 980px; width: min(980px, 96vw); }
+.trendMeta{ font-size:12px; opacity:.85; margin: 6px 0 10px; line-height:1.35; }
+#trendCanvas{
+  width: 100%;
+  height: 360px;
+  display: block;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+@media (max-width: 768px){
+  #trendCanvas{ height: 340px; }
+}

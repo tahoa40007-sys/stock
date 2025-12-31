@@ -1,4 +1,4 @@
-const VERSION = "v7";
+const VERSION = "v8";
 const APP_CACHE = `cb-app-${VERSION}`;
 
 // GitHub Pages (/stock/) 用相對路徑最穩
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
+  "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];

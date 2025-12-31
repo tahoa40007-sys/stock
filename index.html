@@ -4,23 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>CB Watchlist（雲端版）</title>
-
   <link rel="stylesheet" href="./styles.css" />
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#111827">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-
 </head>
 <body>
   <header class="topbar">
-    <div class="title">
+    <div>
       <div class="h1">CB Watchlist</div>
-      <div class="sub">Google Drive 雲端資料｜欄位勾選・排序・釘選・Watchlist</div>
+      <div class="sub">卡片模式（thefew 欄位）+ CB 近3M 成交價/量</div>
     </div>
     <div class="actions">
+      <button id="btnRefresh">更新</button>
+      <button id="btnForce">強制更新</button>
       <button id="btnSettings">資料來源</button>
-      <button id="btnRefresh">更新資料</button>
     </div>
   </header>
 
@@ -29,39 +28,38 @@
       <div class="card">
         <div class="cardTitle">Watchlist</div>
         <div class="row">
-          <input id="inpAdd" placeholder="輸入債券代號，例如 64422" />
-          <button id="btnAdd">新增</button>
+          <input id="inpAdd" placeholder="輸入 股票 4 碼 或 CB 5 碼以上，按 Enter / 加入" />
+          <button id="btnAdd">加入</button>
+          <button id="btnClear">清空</button>
         </div>
-        <div class="chips" id="watchChips"></div>
-        <div class="hint">Watchlist 存在手機本機（LocalStorage）。之後要多人/多裝置同步，我們再做「雲端 watchlist」。</div>
+        <div id="watchChips" class="chips"></div>
       </div>
 
       <div class="card">
-        <div class="cardTitle">排序</div>
+        <div class="cardTitle">篩選 / 排序</div>
         <div class="row">
-          <select id="selSortKey"></select>
-          <select id="selSortDir">
-            <option value="desc">由大到小</option>
-            <option value="asc">由小到大</option>
-          </select>
-          <button id="btnApplySort">套用</button>
+          <input id="inpQ" placeholder="搜尋（代號/名稱/關鍵字）" />
+          <select id="selSort"></select>
+          <button id="btnSortDir">↑↓</button>
         </div>
-        <div class="hint">也可以直接點表格標題排序。</div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">顯示欄位 / 釘選</div>
-        <div class="cols" id="colChooser"></div>
-        <div class="hint">⭐ 代表「釘選」，會顯示在最左邊。</div>
+        <div class="hint">卡片右上角的 <b>📈3M</b> 可看近三個月 CB 成交價/成交量。</div>
       </div>
     </div>
+
+    <details class="card" style="margin-top:12px">
+      <summary class="cardTitle" style="cursor:pointer">進階：顯示欄位 / 釘選 / 欄位順序</summary>
+      <div class="row">
+        <div style="flex:1;min-width:260px">
+          <div class="hint">欄位勾選/釘選主要影響桌機表格與卡片下方資訊區。卡片標題與 badge 固定顯示。</div>
+          <div id="colChooser" class="cols"></div>
+        </div>
+      </div>
+    </details>
   </section>
 
   <main class="main">
     <div id="status" class="status">尚未載入資料</div>
-	<!-- 手機卡片容器（桌機會用 CSS 隱藏） -->
     <div id="cardList" class="cardList"></div>
-	
     <div class="tableWrap">
       <table id="tbl"></table>
     </div>
@@ -71,13 +69,15 @@
     <form method="dialog" class="dlg">
       <div class="dlgTitle">資料來源設定（Google Drive API）</div>
       <div class="dlgBody">
-        <label>Drive API Key（Google Cloud 建 API key，並啟用 Google Drive API）</label>
+        <label>Drive API Key</label>
         <input id="inpApiKey" placeholder="AIza..." />
-        <label>檔案 ID（cb_snapshot_latest_all.json.gz 的 file id）</label>
+        <label>卡片檔案 ID（cb_card_payload.json.gz）</label>
         <input id="inpFileId" placeholder="1AbCDefG..." />
+        <label>趨勢檔案 ID（cb_trend_3m.json.gz）</label>
+        <input id="inpTrendFileId" placeholder="1XyZ..." />
         <div class="hint">
-          本頁會用 <code>https://www.googleapis.com/drive/v3/files/{fileId}?alt=media&key=API_KEY</code> 下載檔案內容。<br/>
-          你的 Drive 檔案需設定成「知道連結的人可檢視」或公開。
+          下載用：<code>https://www.googleapis.com/drive/v3/files/{fileId}?alt=media&key=API_KEY</code><br/>
+          Drive 檔案需設定成「知道連結的人可檢視」或公開。
         </div>
       </div>
       <div class="dlgActions">
@@ -87,17 +87,27 @@
     </form>
   </dialog>
 
-<script src="./app.js"></script>
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", async () => {
-      try {
-        await navigator.serviceWorker.register("./service-worker.js");
-      } catch (e) {
-        console.warn("Service Worker 註冊失敗：", e);
-      }
-    });
-  }
-</script>
+  <dialog id="dlgTrend">
+    <form method="dialog" class="dlg dlgTrend">
+      <div class="dlgTitle" id="trendTitle">趨勢</div>
+      <div class="dlgBody">
+        <div id="trendMeta" class="trendMeta"></div>
+        <canvas id="trendCanvas"></canvas>
+        <div class="hint" style="margin-top:8px">只顯示「有成交」的日期（CB 沒成交很正常）。</div>
+      </div>
+      <div class="dlgActions">
+        <button value="cancel">關閉</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js");
+      });
+    }
+  </script>
 </body>
 </html>
