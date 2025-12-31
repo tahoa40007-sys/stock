@@ -591,13 +591,21 @@ function drawTrend(canvas, pts) {
   canvas.height = Math.floor(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const pad = 28;
+  // layout
+  const padL = 56;   // left labels
+  const padR = 18;
+  const padT = 26;
+  const padB = 30;   // bottom x labels
   const gap = 18;
-  const hPrice = Math.floor((cssH - pad*2 - gap) * 0.62);
-  const hVol   = (cssH - pad*2 - gap) - hPrice;
 
-  const x0 = pad, y0 = pad, w = cssW - pad*2;
-  const yPrice0 = y0, yPrice1 = y0 + hPrice;
+  const innerW = cssW - padL - padR;
+  const innerH = cssH - padT - padB;
+
+  const hPrice = Math.floor((innerH - gap) * 0.62);
+  const hVol   = innerH - gap - hPrice;
+
+  const x0 = padL, x1 = padL + innerW;
+  const yPrice0 = padT, yPrice1 = padT + hPrice;
   const yVol0 = yPrice1 + gap, yVol1 = yVol0 + hVol;
 
   ctx.clearRect(0, 0, cssW, cssH);
@@ -605,10 +613,11 @@ function drawTrend(canvas, pts) {
   if (!pts || pts.length === 0) {
     ctx.font = "14px system-ui";
     ctx.fillStyle = "#111827";
-    ctx.fillText("近 3M 無成交資料", pad, pad + 18);
+    ctx.fillText("近 3M 無成交資料", padL, padT + 18);
     return;
   }
 
+  // domains
   const dates = pts.map(p => new Date(p.d + "T00:00:00"));
   const tMin = Math.min(...dates.map(d => d.getTime()));
   const tMax = Math.max(...dates.map(d => d.getTime())) || (tMin + 86400000);
@@ -616,29 +625,103 @@ function drawTrend(canvas, pts) {
   const cVals = pts.map(p => Number(p.c)).filter(v => Number.isFinite(v));
   const uVals = pts.map(p => Number(p.u)).filter(v => Number.isFinite(v));
 
-  const cMin = Math.min(...cVals);
-  const cMax = Math.max(...cVals);
+  let cMin = Math.min(...cVals);
+  let cMax = Math.max(...cVals);
   const uMax = uVals.length ? Math.max(...uVals) : 0;
+
+  // pad price range a bit so line isn't glued to edges
+  if (Number.isFinite(cMin) && Number.isFinite(cMax) && cMax > cMin) {
+    const pad = (cMax - cMin) * 0.06;
+    cMin -= pad;
+    cMax += pad;
+  } else {
+    cMin -= 1;
+    cMax += 1;
+  }
 
   const xOf = (d) => {
     const t = new Date(d + "T00:00:00").getTime();
     const r = (tMax === tMin) ? 1 : (t - tMin) / (tMax - tMin);
-    return x0 + r * w;
+    return x0 + r * innerW;
   };
   const yPriceOf = (c) => {
     const r = (cMax === cMin) ? 0.5 : (c - cMin) / (cMax - cMin);
-    return yPrice1 - r * (hPrice - 10);
+    return yPrice1 - r * (hPrice - 6);
   };
   const yVolOf = (u) => {
     const r = (uMax === 0) ? 0 : (u / uMax);
-    return yVol1 - r * (hVol - 10);
+    return yVol1 - r * (hVol - 6);
   };
 
-  // axes
+  // helpers
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const fmtDate = (t) => {
+    const d = new Date(t);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${mm}/${dd}`;
+  };
+
+  // grid: y ticks
+  const yTicksPrice = 5;
+  const yTicksVol = 3;
+
   ctx.strokeStyle = "#e5e7eb";
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x0, yPrice1); ctx.lineTo(x0 + w, yPrice1); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x0, yVol1); ctx.lineTo(x0 + w, yVol1); ctx.stroke();
+
+  // horizontal gridlines (price)
+  for (let i = 0; i < yTicksPrice; i++) {
+    const r = i / (yTicksPrice - 1);
+    const y = yPrice1 - r * (hPrice - 6);
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+
+    const val = cMin + r * (cMax - cMin);
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(fmtNum(val, 2), x0 - 8, y);
+  }
+
+  // horizontal gridlines (volume)
+  for (let i = 0; i < yTicksVol; i++) {
+    const r = i / (yTicksVol - 1);
+    const y = yVol1 - r * (hVol - 6);
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+
+    const val = r * uMax;
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(Math.round(val).toLocaleString(), x0 - 8, y);
+  }
+
+  // vertical gridlines + x labels (bottom)
+  const xTicks = 6;
+  for (let i = 0; i < xTicks; i++) {
+    const r = i / (xTicks - 1);
+    const t = tMin + r * (tMax - tMin);
+    const x = x0 + r * innerW;
+
+    ctx.strokeStyle = "#f3f4f6";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yPrice0); ctx.lineTo(x, yVol1); ctx.stroke();
+
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = (i === 0) ? "left" : (i === xTicks - 1) ? "right" : "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(fmtDate(t), x, yVol1 + 8);
+  }
+
+  // section labels
+  ctx.fillStyle = "#374151";
+  ctx.font = "12px system-ui";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("成交價", x0, yPrice0 - 6);
+  ctx.fillText("成交量", x0, yVol0 - 6);
 
   // price line
   ctx.strokeStyle = "#111827";
@@ -652,16 +735,28 @@ function drawTrend(canvas, pts) {
   });
   ctx.stroke();
 
-  // points
+  // points + value tooltip-ish (optional minimal: last point label)
   ctx.fillStyle = "#111827";
   pts.forEach((p) => {
     const x = xOf(p.d);
     const y = yPriceOf(Number(p.c));
-    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
   });
 
+  const last = pts[pts.length - 1];
+  if (last && Number.isFinite(Number(last.c))) {
+    const x = xOf(last.d);
+    const y = yPriceOf(Number(last.c));
+    ctx.fillStyle = "#111827";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const tx = clamp(x + 8, x0 + 6, x1 - 60);
+    ctx.fillText(fmtNum(Number(last.c), 2), tx, y);
+  }
+
   // volume bars
-  const barW = 4;
+  const barW = Math.max(2, Math.floor(innerW / Math.max(pts.length, 30)));
   ctx.fillStyle = "rgba(17,24,39,.30)";
   pts.forEach((p) => {
     const u = Number(p.u);
@@ -671,11 +766,15 @@ function drawTrend(canvas, pts) {
     ctx.fillRect(x - barW/2, y, barW, yVol1 - y);
   });
 
-  // labels
+  // min/max hint
+  const cMinReal = Math.min(...cVals);
+  const cMaxReal = Math.max(...cVals);
   ctx.fillStyle = "#374151";
   ctx.font = "12px system-ui";
-  ctx.fillText(`成交價（Min ${fmtNum(cMin)} / Max ${fmtNum(cMax)}）`, x0, yPrice0 - 8);
-  ctx.fillText(`成交量（Max ${uMax || 0}）`, x0, yVol0 - 8);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`(Min ${fmtNum(cMinReal)} / Max ${fmtNum(cMaxReal)})`, x0 + 44, yPrice0 - 20);
+  ctx.fillText(`(Max ${uMax || 0})`, x0 + 44, yVol0 - 20);
 }
 
 async function openTrendForRow(r) {
