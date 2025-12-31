@@ -434,7 +434,8 @@ function renderCards() {
 async function fetchDriveGzipJson(apiKey, fileId, opts = {}) {
   const cacheBust = !!opts.cacheBust;
   const t = cacheBust ? `&t=${Date.now()}` : "";
-  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(apiKey)}${t}`;
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true&key=${encodeURIComponent(apiKey)}${t}`;
+ 
 
   const res = await fetch(url, { cache: cacheBust ? "no-store" : "default" });
   if (!res.ok) throw new Error(`下載失敗：${res.status} ${res.statusText}`);
